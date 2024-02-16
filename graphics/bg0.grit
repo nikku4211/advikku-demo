@@ -1,0 +1,4 @@
+#
+# coquiman city bg : 32x32t, 4bpp, SBB-layout, not compressed.
+#
+-gt -gB4 -mR4 -mLs -pe32 -mp1
