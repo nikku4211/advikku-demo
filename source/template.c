@@ -17,6 +17,17 @@ u16 advik_ticks_per_row_counter = 6;
 u16 advik_ticks_per_row_value = 6;
 u16 advik_current = 0;
 
+u16 advik_arp_tick = 0;
+u16 advik_arp_index = 0;
+u16 advik_arp_enabled = 0;
+
+u16 advik_vib_position = 0;
+u16 advik_vib_ticks_counter = 0;
+
+u16 advik_delay_ticks_counter = 0;
+u16 advik_delay_enabled = 0;
+u16 advik_cut_delay_enabled = 0;
+
 void init_pic() {
 	// Load palette
 	memcpy32(&pal_bg_mem[16], bg0_pal, (sizeof(bg0_pal) >> 2));
@@ -33,28 +44,58 @@ void init_pic() {
 }
 
 void cell_song_setup() {
-	advik_ticks_per_row_counter = advik_ticks_per_row_value = basicSong[advik_current];
+	advik_ticks_per_row_value = basicSong[advik_current];
 	advik_current++;
 	advik_loop_point = advik_start = advik_current;
 }
 
 void cell_song_play() {
 	if (advik_ticks_per_row_counter > 0) {
-		advik_ticks_per_row_counter--;
-	} else {
 		
+		advik_ticks_per_row_counter--;
+		advik_arp_tick++;
+		advik_arp_index = advik_arp_tick % 3;
+		
+		if (advik_delay_enabled > 0) {
+			if (advik_delay_ticks_counter > 0) {
+				advik_delay_ticks_counter--;
+			} else {
+				REG_SND1FREQ = SFREQ_RESET | snd_freqs[basicSong[advik_current]];
+				advik_delay_enabled = 0;
+			}
+		} else if (advik_arp_enabled > 0) {
+			REG_SND1CNT = basicInstruments[basicSong[advik_current-3]];
+			switch (advik_arp_index) {
+				case 1:
+					REG_SND1FREQ = SFREQ_RESET | (snd_freqs[basicSong[advik_current-4] + (basicSong[advik_current-1] >> 4)]);
+					break;
+				case 2:
+					REG_SND1FREQ = SFREQ_RESET | (snd_freqs[basicSong[advik_current-4] + (basicSong[advik_current-1] & 0x0f)]);
+					break;
+				default:
+					REG_SND1FREQ = SFREQ_RESET | (snd_freqs[basicSong[advik_current-4]]);
+			}
+		}
+		
+	} else {
+		advik_arp_enabled = 0;
 		if (basicSong[advik_current] == 0xff) {
 			advik_current = advik_loop_point;
 		} 
 		
 		REG_SND1CNT = basicInstruments[basicSong[advik_current+1]];
-		if (basicSong[advik_current] < 0xf0) {
-			REG_SND1FREQ = SFREQ_RESET | snd_freqs[basicSong[advik_current]];
-		}
 		
 		switch (basicSong[advik_current+2]) {
+			case 0x00:
+				if (basicSong[advik_current+3] > 0) {
+					advik_arp_enabled = 1;
+				}
 			case 0x05:
 				REG_SNDDMGCNT = (REG_SNDDMGCNT & 0xff00) | basicSong[advik_current+3];
+				break;
+			case 0x07:
+				advik_delay_enabled = 1;
+				advik_delay_ticks_counter = basicSong[advik_current+3] - 1;
 				break;
 			case 0x08:
 				REG_SNDDMGCNT = (REG_SNDDMGCNT & 0x00ff) | (basicSong[advik_current+3] << 8);
@@ -69,8 +110,12 @@ void cell_song_play() {
 				advik_ticks_per_row_value = basicSong[advik_current+3];
 				break;
 		}
+		if (basicSong[advik_current] < 0xf0 && advik_delay_enabled == 0) {
+			REG_SND1FREQ = SFREQ_RESET | snd_freqs[basicSong[advik_current]];
+		}
 		advik_current += 4;
 		advik_ticks_per_row_counter = advik_ticks_per_row_value;
+		advik_arp_tick = 0;
 	}
 }
 
