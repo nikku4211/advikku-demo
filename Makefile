@@ -32,8 +32,9 @@ BUILD		:= build
 SOURCES		:= source
 INCLUDES	:= include
 GRAPHICS := graphics
-DATA		:=
+DATA		:= data
 MUSIC		:= music
+SAMPLES := samples
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -112,7 +113,7 @@ export OFILES_SOURCES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
 
 export OFILES_GRAPHICS := $(PNGFILES:.png=.o)
 
-export OFILES := $(OFILES_BIN) $(OFILES_SOURCES) $(OFILES_GRAPHICS)
+export OFILES := $(OFILES_BIN) $(OFILES_SOURCES) $(OFILES_GRAPHICS) $(OFILES_SAMPLES)
 
 export HFILES := $(addsuffix .h,$(subst .,_,$(BINFILES))) $(PNGFILES:.png=.h)
 
