@@ -1,32 +1,19 @@
 
 #include <tonc.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "advikku.h"
+#include "advikku_global.h"
 
 #include "bg0.h"
 #include "bg1.h"
 #include "../music/BasicDog.h"
+#include "zetakick_bin.h"
+#include "zetasnare_bin.h"
 
-// Advikku variables
-u16 advik_start = 0;
-u16 advik_loop_point = 1;
-u16 advik_ticks_per_row_counter = 6;
-u16 advik_ticks_per_row_value = 6;
-u16 advik_current = 0;
-
-u16 advik_arp_tick = 0;
-u16 advik_arp_index = 0;
-u16 advik_arp_enabled = 0;
-
-u16 advik_vib_position = 0;
-u16 advik_vib_ticks_counter = 0;
-
-u16 advik_delay_ticks_counter = 0;
-u16 advik_delay_enabled = 0;
-u16 advik_cut_delay_enabled = 0;
+IWRAM_DATA uint32_t fifo_sample_1[1018];
 
 void init_pic() {
 	// Load palette
@@ -44,79 +31,17 @@ void init_pic() {
 }
 
 void cell_song_setup() {
-	advik_ticks_per_row_value = basicSong[advik_current];
+	advik_ch1_current_order = advik_global_current_order[0];
+	advik_ch2_current_order = advik_global_current_order[1];
+	advik_ch3_current_order = advik_global_current_order[2];
+	advik_ch4_current_order = advik_global_current_order[3];
+	advik_ticks_per_row_value = advik_ch1_current_order[advik_current];
 	advik_current++;
 	advik_loop_point = advik_start = advik_current;
 }
 
-void cell_song_play() {
-	if (advik_ticks_per_row_counter > 0) {
-		
-		advik_ticks_per_row_counter--;
-		advik_arp_tick++;
-		advik_arp_index = advik_arp_tick % 3;
-		
-		if (advik_delay_enabled > 0) {
-			if (advik_delay_ticks_counter > 0) {
-				advik_delay_ticks_counter--;
-			} else {
-				REG_SND1FREQ = SFREQ_RESET | snd_freqs[basicSong[advik_current]];
-				advik_delay_enabled = 0;
-			}
-		} else if (advik_arp_enabled > 0) {
-			REG_SND1CNT = basicInstruments[basicSong[advik_current-3]];
-			switch (advik_arp_index) {
-				case 1:
-					REG_SND1FREQ = SFREQ_RESET | (snd_freqs[basicSong[advik_current-4] + (basicSong[advik_current-1] >> 4)]);
-					break;
-				case 2:
-					REG_SND1FREQ = SFREQ_RESET | (snd_freqs[basicSong[advik_current-4] + (basicSong[advik_current-1] & 0x0f)]);
-					break;
-				default:
-					REG_SND1FREQ = SFREQ_RESET | (snd_freqs[basicSong[advik_current-4]]);
-			}
-		}
-		
-	} else {
-		advik_arp_enabled = 0;
-		if (basicSong[advik_current] == 0xff) {
-			advik_current = advik_loop_point;
-		} 
-		
-		REG_SND1CNT = basicInstruments[basicSong[advik_current+1]];
-		
-		switch (basicSong[advik_current+2]) {
-			case 0x00:
-				if (basicSong[advik_current+3] > 0) {
-					advik_arp_enabled = 1;
-				}
-			case 0x05:
-				REG_SNDDMGCNT = (REG_SNDDMGCNT & 0xff00) | basicSong[advik_current+3];
-				break;
-			case 0x07:
-				advik_delay_enabled = 1;
-				advik_delay_ticks_counter = basicSong[advik_current+3] - 1;
-				break;
-			case 0x08:
-				REG_SNDDMGCNT = (REG_SNDDMGCNT & 0x00ff) | (basicSong[advik_current+3] << 8);
-				break;
-			case 0x09:
-				REG_SND1CNT = (basicInstruments[basicSong[advik_current+1]] & 0xff00) | basicSong[advik_current+3];
-				break;
-			case 0x0c:
-				REG_SND1CNT = (basicInstruments[basicSong[advik_current+1]] & 0x00ff) | (basicSong[advik_current+3] << 8);
-				break;
-			case 0x0f:
-				advik_ticks_per_row_value = basicSong[advik_current+3];
-				break;
-		}
-		if (basicSong[advik_current] < 0xf0 && advik_delay_enabled == 0) {
-			REG_SND1FREQ = SFREQ_RESET | snd_freqs[basicSong[advik_current]];
-		}
-		advik_current += 4;
-		advik_ticks_per_row_counter = advik_ticks_per_row_value;
-		advik_arp_tick = 0;
-	}
+void fifofum(){
+	REG_DMA1CNT = 0;
 }
 
 //---------------------------------------------------------------------------------
@@ -137,18 +62,44 @@ int main(void) {
 	
 	// 3 2 1 make some noise
 	
+	//clear DAC FIFO buffer
+	memset32((void *)REG_FIFO_A, 0x0000, 1);
+	//copy some sample bytes to IWRAM
+	memcpy32(fifo_sample_1, zetakick_bin, (1018 >> 2));
+	//copy a sample byte to the DAC FIFO
+	memcpy32((void *)REG_FIFO_A, fifo_sample_1, (1018 >> 2));
+	
 	// turn sound on
 	REG_SNDSTAT= SSTAT_ENABLE;
 	// snd1 on left/right ; both full volume
-	REG_SNDDMGCNT = SDMG_BUILD_LR(SDMG_SQR1, 7);
+	REG_SNDDMGCNT = 0;
 	// DMG ratio to 100%
-	REG_SNDDSCNT= SDS_DMG100;
-
-	// no sweep
-	REG_SND1SWEEP= SSW_OFF;
-	// envelope: vol=12, decay, max step time (7) ; 50% duty
-	REG_SND1CNT= SSQR_ENV_BUILD(12, 0, 7) | SSQR_DUTY1_2;
-	REG_SND1FREQ= 0;
+	REG_SNDDSCNT= SDS_DMG100 | SDS_A100 | SDS_AR | SDS_AL | SDS_ATMR0 | SDS_ARESET;
+	
+	//set timer 0
+	REG_TM0D = 65024;
+	REG_TM0CNT = TM_ENABLE;
+	
+	//set DMA transfer to DAC FIFO
+	REG_DMA1SAD = (u32)fifo_sample_1;
+	REG_DMA1DAD = REG_FIFO_A;
+	REG_DMA1CNT = DMA_DST_FIXED | DMA_REPEAT | DMA_16 | DMA_AT_REFRESH | DMA_ENABLE;
+	
+	//set timer 1
+	REG_TM1D = 65536 - zetakick_bin_size;
+	REG_TM1CNT = TM_CASCADE | TM_IRQ | TM_ENABLE;
+	
+	irq_add(II_TIMER1, fifofum);
+	
+	//copy channel 3 waveform over
+	REG_SND3SEL = 0;
+	tonccpy((void *)REG_WAVE_RAM, basicSaw, 16);
+	REG_SND3SEL = 0xC0;
+	
+	advik_global_current_order = basicSong;
+	advik_current_square_instruments = basicSquareInstruments;
+	advik_current_wave_instruments = basicWaveInstruments;
+	advik_current_noise_instruments = basicNoiseInstruments;
 	
 	cell_song_setup();
 
