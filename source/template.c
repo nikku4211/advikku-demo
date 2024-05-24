@@ -40,6 +40,26 @@ void cell_song_setup() {
 	advik_loop_point = advik_start = advik_current;
 }
 
+IWRAM_CODE void isr_master();
+IWRAM_CODE void hbl_grad_direct();
+
+void vct_wait();
+void vct_wait_nest();
+
+// Function pointers to master isrs.
+const fnptr master_isrs[2]=
+{
+	(fnptr)isr_master,
+	(fnptr)hbl_grad_direct
+};
+
+// (1) Uses tonc_isr_master.s'  isr_master() as a switchboard
+void hbl_grad_routed()
+{
+	u32 clr= REG_VCOUNT/8;
+	pal_bg_mem[0]= RGB15(clr, 0, 31-clr);
+}
+
 void fifofum(){
 	REG_DMA1CNT = 0;
 }
@@ -52,8 +72,8 @@ int main(void) {
 
 	init_pic();
 
-	// enable hblank register
-	irq_init(NULL);
+	// enable vblank register
+	irq_init(master_isrs[0]);
 	irq_add(II_VBLANK, NULL);
 	
 	REG_BG0CNT= BG_CBB(0) | BG_SBB(30) | BG_4BPP | BG_REG_32x32;
@@ -67,7 +87,7 @@ int main(void) {
 	//copy some sample bytes to IWRAM
 	memcpy32(fifo_sample_1, zetakick_bin, (1018 >> 2));
 	//copy a sample byte to the DAC FIFO
-	memcpy32((void *)REG_FIFO_A, fifo_sample_1, (1018 >> 2));
+	memcpy32((void *)REG_FIFO_A, fifo_sample_1, (4 >> 2));
 	
 	// turn sound on
 	REG_SNDSTAT= SSTAT_ENABLE;
@@ -89,7 +109,7 @@ int main(void) {
 	REG_TM1D = 65536 - zetakick_bin_size;
 	REG_TM1CNT = TM_CASCADE | TM_IRQ | TM_ENABLE;
 	
-	irq_add(II_TIMER1, fifofum);
+	irq_add(II_TIMER1, NULL);
 	
 	//copy channel 3 waveform over
 	REG_SND3SEL = 0;
